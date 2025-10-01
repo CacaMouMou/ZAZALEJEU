@@ -1,3 +1,4 @@
+
 // ====================================================================
 // CONFIGURATION ET VARIABLES GLOBALES DU RELAIS EN LIGNES
 // ====================================================================
@@ -6,7 +7,7 @@
 const GAME_WIDTH = 800;
 const GAME_HEIGHT = 600;
 
-// NOUVEAU: Lanes condensées et déplacées vers le bas (dans les 50% inférieurs)
+// Lanes condensées et déplacées vers le bas (dans les 50% inférieurs)
 const LANE_Y = [
     350, // Ligne du haut (Gauche)
     450, // Ligne du milieu
@@ -21,7 +22,7 @@ const ROAD_Y_START = GAME_HEIGHT * 0.5; // 300
 const ROAD_HEIGHT = GAME_HEIGHT * 0.5;  // 300
 
 // --- Liens Promotionnels ---
-const SPOTIFY_LINK = 'https://open.spotify.com/intl-fr/artist/6gQQrSMHA7SfUEoGSVezPX?si=nyoDsOx5SvuozWH0V4N7Bw'; // LIEN MIS À JOUR
+const SPOTIFY_LINK = 'https://open.spotify.com/intl-fr/artist/6gQQrSMHA7SfUEoGSVezPX?si=nyoDsOx5SvuozWH0V4N7Bw'; 
 const INSTAGRAM_HANDLE = '@shadowmas_';
 
 // --- Variables de Jeu ---
@@ -50,7 +51,7 @@ class GameScene extends Phaser.Scene {
     }
 
     preload() {
-        // CHARGEMENT DES ASSETS
+        // CHEMINS SIMPLES (Phaser gère le préfixe 'baseURL' pour le distant)
         this.load.image('player', 'assets/player.png'); 
         this.load.image('cigarette', 'assets/cigarette.png'); 
         
@@ -76,10 +77,8 @@ class GameScene extends Phaser.Scene {
         
         // Route (Couche intermédiaire) : 50% de la hauteur, commence à 300px
         if (this.textures.exists('mid_road')) {
-            // Utilise les nouvelles constantes pour la position et la taille de la route
             midLayer = this.add.tileSprite(0, ROAD_Y_START, GAME_WIDTH, ROAD_HEIGHT, 'mid_road').setOrigin(0, 0);
         } else {
-            // Rectangle gris simulant la route
             midLayer = this.add.rectangle(0, ROAD_Y_START, GAME_WIDTH, ROAD_HEIGHT, 0x444444).setOrigin(0);
         }
         
@@ -312,6 +311,10 @@ const config = {
         autoCenter: Phaser.Scale.CENTER_BOTH
     },
     gameTitle: "Shadow Mas", 
+    // NOUVEAU: Définit le chemin de base pour l'hébergement distant
+    baseURL: (location.hostname.includes('github.io') || location.hostname.includes('netlify')) 
+             ? '/shadow-mas-game/' 
+             : '',
 };
 
 new Phaser.Game(config);
