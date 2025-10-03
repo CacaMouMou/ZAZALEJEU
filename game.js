@@ -326,7 +326,7 @@ const config = {
     },
     gameTitle: "Shadow Mas : Zaza Mode", 
     baseURL: (location.hostname.includes('github.io') || location.hostname.includes('netlify')) 
-             ? '/Shadow-Mas-Game/' 
+             ? '/ZAZALEJEU/'
              : '',
 };
 
