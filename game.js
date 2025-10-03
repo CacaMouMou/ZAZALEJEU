@@ -1,45 +1,21 @@
 // ====================================================================
-// CONFIGURATION ET VARIABLES GLOBALES DU RELAIS EN LIGNES
+// CONFIGURATION ET VARIABLES GLOBALES : LE CONTRE-LA-MONTRE
 // ====================================================================
 
-// --- Constantes de Positionnement ---
 const GAME_WIDTH = 800;
 const GAME_HEIGHT = 600;
-
-// Lanes condensées et déplacées vers le bas (dans les 50% inférieurs)
-const LANE_Y = [
-    350, // Ligne du haut (Gauche)
-    450, // Ligne du milieu
-    550  // Ligne du bas (Droite)
-];
-const PLAYER_X = 100; 
-const RELAY_TARGET_X = GAME_WIDTH + 100; 
-const VICTORY_SCORE = 15; 
-
-// --- Constantes de la Route (50% de la hauteur totale) ---
-const ROAD_Y_START = GAME_HEIGHT * 0.5; // 300
-const ROAD_HEIGHT = GAME_HEIGHT * 0.5;  // 300
-
-// --- Liens Promotionnels ---
-const SPOTIFY_LINK = 'https://open.spotify.com/intl-fr/artist/6gQQrSMHA7SfUEoGSVezPX?si=nyoDsOx5SvuozWH0V4N7Bw'; 
-const INSTAGRAM_HANDLE = '@shadowmas_';
+const SURVIVAL_TIME = 20; // 20 secondes à tenir
+const MAX_TEMPTATION_LEVEL = 100; // Niveau max pour le rouge
 
 // --- Variables de Jeu ---
 let player; 
-let playerLane = 1; 
-let nextRelayRunner; 
-let scrollSpeed = 4; 
-let score = 0;
-let scoreText;
-let highScore = 0;
+let zazaGroup;         // Le groupe qui contient toutes les icônes de Zaza
+let timeRemaining = SURVIVAL_TIME;
+let timerText;
+let temptationLevel = 0; // 0 = Vert/Bleu (Calme), 100 = Rouge Vif (Danger)
 let isGameActive = true;
-let cigaretteFlame; 
+let spawnTimer;        // Le timer pour faire apparaître les Zaza
 let backgroundMusic; 
-
-// --- Variables de Décor ---
-let bgLayer; 
-let midLayer; 
-let roadLines; 
 
 
 // ====================================================================
@@ -51,72 +27,68 @@ class GameScene extends Phaser.Scene {
     }
 
     preload() {
-        // CHARGEMENT DES ASSETS (Chemins simples pour compatibilité locale/distante)
+        // CHARGEMENT DES ASSETS
         this.load.image('player', 'assets/player.png'); 
-        this.load.image('cigarette', 'assets/cigarette.png'); 
+        this.load.image('zaza_icon', 'assets/zaza_icon.png'); // NOUVEL ASSET ZAZA
+        this.load.image('bg_dark', 'assets/bg_dark.png');     // Nouveau fond plus sombre ou simplement une couleur
         
-        // CHARGEMENT DES DECORS
-        this.load.image('bg_sky', 'assets/bg_sky.png'); 
-        this.load.image('mid_road', 'assets/mid_road.png');
-
-        // CHARGEMENT AUDIO (Le son de défaite est retiré)
+        // CHARGEMENT AUDIO
         this.load.audio('music', [
             'assets/EN VAIN.mp3', 
             'assets/EN VAIN.wav'  
         ]); 
-        this.load.audio('sfx_relay', 'assets/relay_success.mp3'); 
+        this.load.audio('sfx_tap', 'assets/sfx_tap.mp3');     // NOUVEL ASSET : son quand on tape un Zaza
     }
 
     create() {
-        this.cameras.main.setBackgroundColor('#4444FF'); 
+        this.cameras.main.setBackgroundColor('#222222'); // Fond sombre par défaut
         isGameActive = true;
-        score = 0;
-        scrollSpeed = 4;
-        playerLane = 1;
+        timeRemaining = SURVIVAL_TIME;
+        temptationLevel = 0;
 
-        // --- 1. Décors (Garantis) ---
-        if (this.textures.exists('bg_sky')) {
-            bgLayer = this.add.tileSprite(0, 0, GAME_WIDTH, GAME_HEIGHT, 'bg_sky').setOrigin(0, 0); 
-        } else {
-            bgLayer = this.add.rectangle(0, 0, GAME_WIDTH, GAME_HEIGHT, 0x4444FF).setOrigin(0);
-        }
-        if (this.textures.exists('mid_road')) {
-            midLayer = this.add.tileSprite(0, ROAD_Y_START, GAME_WIDTH, ROAD_HEIGHT, 'mid_road').setOrigin(0, 0);
-        } else {
-            midLayer = this.add.rectangle(0, ROAD_Y_START, GAME_WIDTH, ROAD_HEIGHT, 0x444444).setOrigin(0);
-        }
-        roadLines = this.add.group();
-        if (!this.textures.exists('mid_road')) {
-            for (let i = 0; i < LANE_Y.length; i++) {
-                const line = this.add.rectangle(0, LANE_Y[i], GAME_WIDTH * 2, 5, 0xFFFFFF).setOrigin(0, 0.5).setDepth(1);
-                roadLines.add(line);
-            }
-        }
+        // --- 1. Décors et Fond ---
+        // On peut utiliser une simple couleur pour un style plus arcade
+        this.add.rectangle(0, 0, GAME_WIDTH, GAME_HEIGHT, 0x111111).setOrigin(0, 0);
 
 
-        // --- 2. Création du Joueur ---
-        player = this.add.sprite(PLAYER_X, LANE_Y[playerLane], 'player').setScale(0.15).setDepth(2);
+        // --- 2. Création du Joueur (Fixe au centre) ---
+        player = this.add.sprite(GAME_WIDTH / 2, GAME_HEIGHT / 2, 'player').setScale(0.3).setDepth(2);
+        player.setTint(0x00FF00); // Commence en vert (calme)
+
+
+        // --- 3. Groupes d'objets ---
+        zazaGroup = this.physics.add.group();
+
+        // --- 4. UI et Timer ---
+        const defaultTextStyle = { fontSize: '48px', fill: '#FFF', align: 'center' };
         
-        // --- 3. La Flamme ---
-        cigaretteFlame = this.add.sprite(player.x + 30, player.y - 30, 'cigarette').setScale(0.1).setDepth(3);
-
-        // --- 4. Génération du premier Relieur ---
-        this.spawnRelayRunner();
-
-        // --- 5. UI (Score, Meilleur Score et Objectif) ---
-        const defaultTextStyle = { fontSize: '32px', fill: '#FFF' };
-
-        scoreText = this.add.text(50, 50, 'RELAIS: 0', defaultTextStyle).setDepth(10);
+        timerText = this.add.text(GAME_WIDTH / 2, 50, `TEMPS: ${SURVIVAL_TIME}`, defaultTextStyle).setOrigin(0.5, 0).setDepth(10);
         
-        const objectiveText = `OBJECTIF: ${VICTORY_SCORE} RELAIS - Aide ${this.game.config.gameTitle} à faire passer son truc à ses clones.`;
-        this.add.text(GAME_WIDTH / 2, 20, objectiveText, { fontSize: '20px', fill: '#FFD700', align: 'center' }).setOrigin(0.5, 0).setDepth(10);
+        this.add.text(GAME_WIDTH / 2, GAME_HEIGHT - 50, "ÉVITE QUE LE ROUGE NE TE CONSOMME", { fontSize: '24px', fill: '#FFD700' }).setOrigin(0.5).setDepth(10);
+
+
+        // --- 5. Logique de Jeu (Spawning et Chrono) ---
         
-        this.add.text(750, 50, `MEILLEUR: ${highScore}`, { fontSize: '32px', fill: '#FFD700' }).setOrigin(1, 0).setDepth(10);
-        
+        // A. Chronomètre de survie (déclenche la victoire à la fin)
+        this.time.addEvent({
+            delay: 1000, // Toutes les secondes
+            callback: this.updateTimer,
+            callbackScope: this,
+            loop: true
+        });
+
+        // B. Chronomètre d'apparition des Zaza
+        spawnTimer = this.time.addEvent({
+            delay: 1500, // Démarre toutes les 1.5s
+            callback: this.spawnZaza,
+            callbackScope: this,
+            loop: true
+        });
+
+
         // --- 6. Musique de Fond (BGM) ---
         backgroundMusic = this.sound.add('music', { loop: true, volume: 0.5 }); 
         
-        // Gère le déblocage forcé de l'audio (Crucial pour mobile)
         if (this.sound.locked) {
             this.input.once('pointerdown', () => {
                 this.sound.unlock();
@@ -127,168 +99,117 @@ class GameScene extends Phaser.Scene {
         } else {
              backgroundMusic.play();
         }
-
-
-        // --- 7. Contrôles (CORRECTION TACTILE MOBILE) ---
-        
-        // Contrôles Clavier (pour le desktop)
-        this.input.keyboard.on('keydown-UP', () => this.changeLane(-1), this); 
-        this.input.keyboard.on('keydown-DOWN', () => this.changeLane(1), this); 
-
-        // Contrôles Tactiles (optimisés pour le balayage)
-        let dragStartX = 0;
-        let dragStartY = 0;
-
-        // Événement DÉBUT du contact
-        this.input.on('pointerdown', (pointer) => {
-            dragStartX = pointer.x;
-            dragStartY = pointer.y;
-        });
-
-        // Événement FIN du contact (Détection du Swipe ou du Tap par zone)
-        this.input.on('pointerup', (pointer) => {
-            if (!isGameActive) return;
-            
-            const dragThreshold = 50; // Distance minimale pour être considéré comme un balayage
-            const distanceY = pointer.y - dragStartY;
-
-            // VÉRIFICATION DU BALAYAGE VERTICAL (Swipe)
-            if (Math.abs(distanceY) > dragThreshold) {
-                // Balayage vers le haut
-                if (distanceY < 0) { 
-                    this.changeLane(-1);
-                } 
-                // Balayage vers le bas
-                else { 
-                    this.changeLane(1);
-                }
-            }
-            // VÉRIFICATION DU TAP PAR ZONE (Si ce n'est pas un swipe, on utilise la moitié de l'écran)
-            else {
-                const midPointY = GAME_HEIGHT / 2;
-                if (pointer.y < midPointY) {
-                    this.changeLane(-1); // Tap en haut = Monter
-                } else {
-                    this.changeLane(1); // Tap en bas = Descendre
-                }
-            }
-        }, this);
-    } // Fin de la fonction create()
+    } // Fin de create()
 
     update(time, delta) {
-        if (!player || !isGameActive) {
-            if (isGameActive) {
-                 this.endGame(false, 'Erreur critique : Personnage manquant');
-            }
+        if (!isGameActive) return;
+
+        // --- 1. Mise à jour de la couleur du joueur ---
+        const colorRatio = temptationLevel / MAX_TEMPTATION_LEVEL;
+        
+        // On interpole entre le vert (0x00FF00) et le rouge (0xFF0000)
+        const r = Math.floor(0xFF * colorRatio); 
+        const g = Math.floor(0xFF * (1 - colorRatio));
+        const color = (r << 16) + (g << 8); // Crée le code hexadécimal de la couleur
+
+        player.setTint(color);
+
+        // --- 2. Vérification de la défaite ---
+        if (temptationLevel >= MAX_TEMPTATION_LEVEL) {
+            this.endGame(false, "La Zaza t'a consumé !");
             return;
         }
 
-        // --- Mouvement des Décors (Parallax) ---
-        if (bgLayer.tilePositionX !== undefined) {
-             bgLayer.tilePositionX += scrollSpeed * 0.1;
-        }
-        if (midLayer.tilePositionX !== undefined) {
-            midLayer.tilePositionX += scrollSpeed * 1.0; 
-        }
-
-        // Défilement des lignes de route (si l'image de route manque)
-        if (roadLines.getChildren().length > 0 && midLayer.tilePositionX === undefined) {
-             roadLines.getChildren().forEach(line => {
-                line.x -= scrollSpeed;
-                if (line.x < -line.width) {
-                    line.x = GAME_WIDTH;
-                }
-             });
-        }
-        
-        // --- Mise à jour du Joueur et de la Flamme ---
-        if (player) { 
-            cigaretteFlame.setPosition(player.x + 30, player.y - 30);
-        }
-        
-        // --- Mouvement du Relieur et Vérification du Relais/Échec ---
-        if (nextRelayRunner) {
-            nextRelayRunner.x -= scrollSpeed;
-
-            const distance = nextRelayRunner.x - player.x;
-
-            if (distance < 50 && distance > -50) { 
-                if (nextRelayRunner.y === player.y) {
-                    this.performRelay(nextRelayRunner);
-                    return; 
-                }
-            }
+        // --- 3. Vérification des collisions Zaza ---
+        zazaGroup.getChildren().forEach(zaza => {
+            // Si le Zaza est assez proche du centre pour "toucher" le joueur
+            const distanceToCenter = Phaser.Math.Distance.Between(zaza.x, zaza.y, GAME_WIDTH / 2, GAME_HEIGHT / 2);
             
-            // ÉCHEC (défaite)
-            if (nextRelayRunner.x < player.x - 100) { 
-                this.endGame(false, `Relais manqué ! Aide ${this.game.config.gameTitle} à faire passer son truc à ses clones.`);
+            if (distanceToCenter < 50) { // Seuil de "collision"
+                zaza.destroy();
+                this.increaseTemptation(25); // Gros choc à l'impact
             }
-        }
-        
-        scrollSpeed += 0.00005 * delta; 
+        });
     }
 
     // --- Fonctions de Gameplay ---
     
-    changeLane(direction) {
+    updateTimer() {
         if (!isGameActive) return;
 
-        let newLane = playerLane + direction;
-        
-        if (newLane >= 0 && newLane < LANE_Y.length) {
-            playerLane = newLane;
-            
-            this.tweens.add({
-                targets: player,
-                y: LANE_Y[playerLane],
-                duration: 150, 
-                ease: 'Sine.easeInOut'
-            });
+        timeRemaining--;
+        timerText.setText(`TEMPS: ${timeRemaining}`);
+
+        // Défaite lente (la tentation augmente avec le temps)
+        this.increaseTemptation(5); 
+
+        // VICTOIRE !
+        if (timeRemaining <= 0) {
+            this.endGame(true, "T'as tenu 20 secondes, maman est fière !");
         }
     }
     
-    spawnRelayRunner() {
-        if(nextRelayRunner) nextRelayRunner.destroy(); 
-        
-        let targetLane = Phaser.Math.Between(0, LANE_Y.length - 1);
-        while (targetLane === playerLane) {
-            targetLane = Phaser.Math.Between(0, LANE_Y.length - 1);
+    spawnZaza() {
+        if (!isGameActive) return;
+
+        // Sélection d'un point de départ aléatoire sur le bord de l'écran
+        const side = Phaser.Math.Between(0, 3);
+        let startX, startY;
+
+        switch (side) {
+            case 0: // Haut
+                startX = Phaser.Math.Between(0, GAME_WIDTH);
+                startY = -50;
+                break;
+            case 1: // Bas
+                startX = Phaser.Math.Between(0, GAME_WIDTH);
+                startY = GAME_HEIGHT + 50;
+                break;
+            case 2: // Gauche
+                startX = -50;
+                startY = Phaser.Math.Between(0, GAME_HEIGHT);
+                break;
+            case 3: // Droite
+                startX = GAME_WIDTH + 50;
+                startY = Phaser.Math.Between(0, GAME_HEIGHT);
+                break;
         }
         
-        nextRelayRunner = this.add.sprite(RELAY_TARGET_X, LANE_Y[targetLane], 'player').setScale(0.15).setDepth(2);
-        nextRelayRunner.setTint(0xFF00FF);
+        const zaza = this.add.sprite(startX, startY, 'zaza_icon').setScale(0.1).setDepth(3);
+        zazaGroup.add(zaza);
+
+        // Rendre l'icône cliquable (pour la détruire)
+        zaza.setInteractive({ useHandCursor: true });
+        zaza.on('pointerdown', () => this.destroyZaza(zaza));
+        
+        // Animation de déplacement vers le centre du joueur
+        this.tweens.add({
+            targets: zaza,
+            x: GAME_WIDTH / 2,
+            y: GAME_HEIGHT / 2,
+            duration: Phaser.Math.Between(3000, 5000), // Vitesse aléatoire
+            ease: 'Linear'
+        });
     }
 
-    performRelay(newPlayerSprite) {
-        // 1. Mise à jour des stats et jeu du son
-        this.sound.play('sfx_relay', { volume: 0.8 }); 
-        score++;
-        scrollSpeed *= 1.03; 
-        scoreText.setText(`RELAIS: ${score}`);
+    destroyZaza(zazaIcon) {
+        if (!isGameActive) return;
 
-        // 2. Vérification de victoire
-        if (score >= VICTORY_SCORE) {
-            this.endGame(true, `Incroyable ! ${this.game.config.gameTitle} a réussi à faire passer son truc.`);
-            return;
-        }
+        // 1. Jouer le son de destruction
+        this.sound.play('sfx_tap', { volume: 0.8 }); 
 
-        // 3. Changement de personnage
-        newPlayerSprite.clearTint();
+        // 2. Détruire l'icône
+        zazaIcon.destroy();
         
-        const oldPlayer = player; 
-        player = newPlayerSprite; 
-        
-        // On déplace la flamme sur le nouveau joueur AVANT de détruire l'ancien
-        if (cigaretteFlame) {
-             cigaretteFlame.setPosition(player.x + 30, player.y - 30);
-        }
-        
-        oldPlayer.destroy(); // Destruction de l'ancien joueur
-
-        // 4. Lancement du nouveau relai
-        nextRelayRunner = null; 
-        this.spawnRelayRunner();
+        // 3. Diminuer la tentation (Récompense)
+        this.increaseTemptation(-15); // Réduire le rouge
     }
+    
+    increaseTemptation(amount) {
+        temptationLevel += amount;
+        temptationLevel = Phaser.Math.Clamp(temptationLevel, 0, MAX_TEMPTATION_LEVEL);
+    }
+
 
     endGame(isVictory, reason) {
         if (!isGameActive) return;
@@ -298,20 +219,20 @@ class GameScene extends Phaser.Scene {
             const currentScene = this; 
             const sceneKey = 'GameScene'; 
 
-            // 1. ARRÊT DE LA MUSIQUE
+            // Arrêter les timers
+            if(spawnTimer) spawnTimer.destroy();
+            this.time.removeAllEvents(); 
+            
+            // Arrêt de la musique
             if (backgroundMusic && backgroundMusic.isPlaying) {
                 backgroundMusic.stop(); 
             }
             
-            // 2. Nettoyage des sprites
-            if (score > highScore) {
-                highScore = score;
-            }
+            // Nettoyage des sprites
+            zazaGroup.clear(true, true); // Détruire tous les Zaza
 
-            if (player) player.setTint(0xAAAAAA); 
-            if (cigaretteFlame) cigaretteFlame.setVisible(false); 
-            if(nextRelayRunner) nextRelayRunner.destroy();
-
+            if (player) player.setTint(isVictory ? 0x00FF00 : 0xFF0000); // Couleur de fin
+            
             // ⬛️ Écran noir de fin de partie
             const blackScreen = this.add.rectangle(0, 0, GAME_WIDTH, GAME_HEIGHT, 0x000000)
                 .setOrigin(0)
@@ -320,10 +241,9 @@ class GameScene extends Phaser.Scene {
 
 
             // --- 3. Affichage des messages et boutons ---
-            const messageTitle = isVictory ? `VICTOIRE ! 🔥\nMISSION ACCOMPLIE` : 'FLAMME ÉTEINTE !';
+            const messageTitle = isVictory ? `VICTOIRE ! 🥳` : 'GAME OVER ! 💀';
             const messageColor = isVictory ? '#00FF00' : '#FF0000';
-            const buttonText = isVictory ? 'NOUVELLE COURSE' : 'RÉESSAYER';
-            const instagramText = `Retrouve ${this.game.config.gameTitle} sur Insta : ${INSTAGRAM_HANDLE}`;
+            const buttonText = isVictory ? 'ENCORE UNE FOIS' : 'RÉESSAYER';
 
             const textStyleBase = { 
                 fontSize: '28px', 
@@ -343,11 +263,6 @@ class GameScene extends Phaser.Scene {
                 fill: isVictory ? '#00AA00' : '#FF8888', 
             }).setOrigin(0.5).setDepth(10);
             
-            this.add.text(GAME_WIDTH / 2, GAME_HEIGHT / 2 + 10, `Score final : ${score} relais.`, { 
-                ...textStyleBase,
-            }).setOrigin(0.5).setDepth(10);
-
-
             // Bouton Rejouer
             const replayButton = this.add.text(GAME_WIDTH / 2, GAME_HEIGHT / 2 + 80, buttonText, { 
                 ...textStyleBase,
@@ -359,15 +274,15 @@ class GameScene extends Phaser.Scene {
             .setOrigin(0.5)
             .setInteractive({ useHandCursor: true }).setDepth(10); 
 
-            // Redémarrage de la scène (méthode stop/start pour une stabilité maximale)
+            // Redémarrage de la scène
             replayButton.on('pointerdown', () => {
                 if (currentScene.scene.isActive(sceneKey)) {
                     currentScene.scene.stop(sceneKey); 
                     currentScene.scene.start(sceneKey); 
                 }
             });
-            
-            // Bouton Single / Spotify
+
+            // Bouton Spotify (Conservé)
             this.add.text(GAME_WIDTH / 2, GAME_HEIGHT / 2 + 160, '🎧 ÉCOUTER LA MUSIQUE DE SHADOW MAS 🎧', { 
                 ...textStyleBase,
                 fontSize: '30px', 
@@ -377,17 +292,6 @@ class GameScene extends Phaser.Scene {
             }).setOrigin(0.5).setInteractive({ useHandCursor: true }).setDepth(10)
             .on('pointerdown', () => {
                 window.open(SPOTIFY_LINK, '_blank'); 
-            });
-            
-            // Lien Instagram
-            this.add.text(GAME_WIDTH / 2, GAME_HEIGHT / 2 + 220, instagramText, { 
-                ...textStyleBase,
-                fontSize: '20px', 
-                fill: '#AADDFF', 
-            }).setOrigin(0.5).setDepth(10)
-            .setInteractive({ useHandCursor: true })
-            .on('pointerdown', () => {
-                 window.open(`https://www.instagram.com/${INSTAGRAM_HANDLE.replace('@', '')}`, '_blank'); 
             });
         
         } catch (e) {
@@ -407,7 +311,7 @@ const config = {
     physics: {
         default: 'arcade',
         arcade: {
-            // debug: true 
+             // debug: true // Utile pour voir les zones de collision si besoin
         }
     },
     scene: [GameScene], 
@@ -415,8 +319,7 @@ const config = {
         mode: Phaser.Scale.FIT,
         autoCenter: Phaser.Scale.CENTER_BOTH
     },
-    gameTitle: "Shadow Mas", 
-    // CORRECTION CRITIQUE POUR GITHUB PAGES
+    gameTitle: "Shadow Mas : Zaza Mode", 
     baseURL: (location.hostname.includes('github.io') || location.hostname.includes('netlify')) 
              ? '/Shadow-Mas-Game/' 
              : '',
