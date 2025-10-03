@@ -1,21 +1,29 @@
 // ====================================================================
-// CONFIGURATION ET VARIABLES GLOBALES : LE CONTRE-LA-MONTRE
+// CONFIGURATION ET VARIABLES GLOBALES : HIGH SCORE INFINI V6.0 (FIABILISÉ)
 // ====================================================================
 
 const GAME_WIDTH = 800;
 const GAME_HEIGHT = 600;
-const SURVIVAL_TIME = 20; // 20 secondes à tenir
-const MAX_TEMPTATION_LEVEL = 100; // Niveau max pour le rouge
+const MAX_HITS = 5;         // 5 touches max avant la défaite
+const HIT_TOLERANCE = 5;    // Tolérance en pixels autour du centre pour la collision
+
+// Constantes de centre pour la fiabilité de la collision
+const PLAYER_CENTER_X = GAME_WIDTH / 2;
+const PLAYER_CENTER_Y = GAME_HEIGHT / 2;
 
 // --- Variables de Jeu ---
 let player; 
-let zazaGroup;         // Le groupe qui contient toutes les icônes de Zaza
-let timeRemaining = SURVIVAL_TIME;
-let timerText;
-let temptationLevel = 0; // 0 = Vert/Bleu (Calme), 100 = Rouge Vif (Danger)
+let zazaGroup;
+let score = 0;              
+let highScore = 0;
+let scoreText;
+let hitsTaken = 0;
+let hitsText;
 let isGameActive = true;
-let spawnTimer;        // Le timer pour faire apparaître les Zaza
+let spawnTimer;
 let backgroundMusic; 
+let currentZazaSpeed = 4000; 
+const ACCEL_RATE = 50; 
 
 
 // ====================================================================
@@ -29,64 +37,63 @@ class GameScene extends Phaser.Scene {
     preload() {
         // CHARGEMENT DES ASSETS
         this.load.image('player', 'assets/player.png'); 
-        this.load.image('zaza_icon', 'assets/zaza_icon.png'); // NOUVEL ASSET ZAZA
-        this.load.image('bg_dark', 'assets/bg_dark.png');     // Nouveau fond plus sombre ou simplement une couleur
+        this.load.image('zaza_icon', 'assets/zaza_icon.png');
+        this.load.image('bg_dark', 'assets/bg_dark.png'); // Fond simple
         
         // CHARGEMENT AUDIO
         this.load.audio('music', [
             'assets/EN VAIN.mp3', 
             'assets/EN VAIN.wav'  
         ]); 
-        this.load.audio('sfx_tap', 'assets/sfx_tap.mp3');     // NOUVEL ASSET : son quand on tape un Zaza
+        this.load.audio('sfx_tap', 'assets/sfx_tap.mp3');     
+        this.load.audio('sfx_hit', 'assets/sfx_hit.mp3');     
     }
 
     create() {
-        this.cameras.main.setBackgroundColor('#222222'); // Fond sombre par défaut
+        this.cameras.main.setBackgroundColor('#222222'); 
         isGameActive = true;
-        timeRemaining = SURVIVAL_TIME;
-        temptationLevel = 0;
-
-        // --- 1. Décors et Fond ---
-        // On peut utiliser une simple couleur pour un style plus arcade
+        hitsTaken = 0;
+        score = 0;
+        currentZazaSpeed = 4000;
+        
+        // --- 1. Décors ---
         this.add.rectangle(0, 0, GAME_WIDTH, GAME_HEIGHT, 0x111111).setOrigin(0, 0);
 
-
-        // --- 2. Création du Joueur (Fixe au centre) ---
-        player = this.add.sprite(GAME_WIDTH / 2, GAME_HEIGHT / 2, 'player').setScale(0.3).setDepth(2);
-        player.setTint(0x00FF00); // Commence en vert (calme)
-
+        // --- 2. Création du Joueur (Sprite Physique) ---
+        player = this.physics.add.sprite(PLAYER_CENTER_X, PLAYER_CENTER_Y, 'player')
+                   .setScale(0.3).setDepth(2).setImmovable(true); 
+        player.setTint(0xFFFFFF); 
 
         // --- 3. Groupes d'objets ---
         zazaGroup = this.physics.add.group();
 
-        // --- 4. UI et Timer ---
+        // --- 4. UI ---
         const defaultTextStyle = { fontSize: '48px', fill: '#FFF', align: 'center' };
+        const secondaryTextStyle = { fontSize: '30px', fill: '#FFD700' };
         
-        timerText = this.add.text(GAME_WIDTH / 2, 50, `TEMPS: ${SURVIVAL_TIME}`, defaultTextStyle).setOrigin(0.5, 0).setDepth(10);
-        
-        this.add.text(GAME_WIDTH / 2, GAME_HEIGHT - 50, "ÉVITE QUE LE ROUGE NE TE CONSOMME", { fontSize: '24px', fill: '#FFD700' }).setOrigin(0.5).setDepth(10);
+        scoreText = this.add.text(50, 50, 'SCORE: 0s', defaultTextStyle).setOrigin(0, 0).setDepth(10);
+        this.add.text(750, 50, `BEST: ${highScore}s`, { ...defaultTextStyle, fontSize: '30px' }).setOrigin(1, 0).setDepth(10);
+        hitsText = this.add.text(PLAYER_CENTER_X, 120, `TOUCHES: 0 / ${MAX_HITS}`, secondaryTextStyle).setOrigin(0.5, 0).setDepth(10);
 
 
         // --- 5. Logique de Jeu (Spawning et Chrono) ---
         
-        // A. Chronomètre de survie (déclenche la victoire à la fin)
         this.time.addEvent({
-            delay: 1000, // Toutes les secondes
-            callback: this.updateTimer,
+            delay: 1000, 
+            callback: this.updateScoreAndSpeed,
             callbackScope: this,
             loop: true
         });
 
-        // B. Chronomètre d'apparition des Zaza
         spawnTimer = this.time.addEvent({
-            delay: 1500, // Démarre toutes les 1.5s
+            delay: 1000, 
             callback: this.spawnZaza,
             callbackScope: this,
             loop: true
         });
 
 
-        // --- 6. Musique de Fond (BGM) ---
+        // --- 6. Musique de Fond (BGM) et Déblocage Mobile ---
         backgroundMusic = this.sound.add('music', { loop: true, volume: 0.5 }); 
         
         if (this.sound.locked) {
@@ -104,90 +111,92 @@ class GameScene extends Phaser.Scene {
     update(time, delta) {
         if (!isGameActive) return;
 
-        // --- 1. Mise à jour de la couleur du joueur ---
-        const colorRatio = temptationLevel / MAX_TEMPTATION_LEVEL;
+        // --- 1. Mise à jour de la couleur du joueur (Blanc -> Vert) ---
+        const finalColor = Phaser.Display.Color.Interpolate.ColorWithColor(
+            new Phaser.Display.Color(0xFFFFFF),
+            new Phaser.Display.Color(0x00FF00),
+            MAX_HITS,
+            hitsTaken
+        ).color;
         
-        // On interpole entre le vert (0x00FF00) et le rouge (0xFF0000)
-        const r = Math.floor(0xFF * colorRatio); 
-        const g = Math.floor(0xFF * (1 - colorRatio));
-        const color = (r << 16) + (g << 8); // Crée le code hexadécimal de la couleur
-
-        player.setTint(color);
-
-        // --- 2. Vérification de la défaite ---
-        if (temptationLevel >= MAX_TEMPTATION_LEVEL) {
-            this.endGame(false, "La Zaza t'a consumé !");
-            return;
-        }
-
-        // --- 3. Vérification des collisions Zaza ---
+        player.setTint(finalColor);
+        
+        
+        // --- 2. Vérification des collisions Zaza (LOGIQUE PAR POSITION FIABLE) ---
         zazaGroup.getChildren().forEach(zaza => {
-            // Si le Zaza est assez proche du centre pour "toucher" le joueur
-            const distanceToCenter = Phaser.Math.Distance.Between(zaza.x, zaza.y, GAME_WIDTH / 2, GAME_HEIGHT / 2);
             
-            if (distanceToCenter < 50) { // Seuil de "collision"
-                zaza.destroy();
-                this.increaseTemptation(25); // Gros choc à l'impact
+            if (zaza.isDamaging === false) return; 
+
+            // Vérification de la proximité par position X et Y (Absolue)
+            const isNearX = Math.abs(zaza.x - PLAYER_CENTER_X) < HIT_TOLERANCE;
+            const isNearY = Math.abs(zaza.y - PLAYER_CENTER_Y) < HIT_TOLERANCE;
+            
+            // Si la Zaza touche le centre
+            if (isNearX && isNearY) { 
+                
+                // 1. Désactiver immédiatement et masquer
+                zaza.isDamaging = false;
+                zaza.setInteractive(false); 
+                zaza.setVisible(false);
+
+                // 2. Gérer le coup (dégâts, son, écran)
+                this.handleHit();
+
+                // 3. Destruction propre après un petit délai
+                this.time.delayedCall(200, () => {
+                    if (zaza.scene) { 
+                        zaza.destroy();
+                    }
+                });
             }
         });
     }
 
     // --- Fonctions de Gameplay ---
     
-    updateTimer() {
+    updateScoreAndSpeed() {
         if (!isGameActive) return;
 
-        timeRemaining--;
-        timerText.setText(`TEMPS: ${timeRemaining}`);
+        // 1. Augmenter le Score (Temps de survie)
+        score++;
+        scoreText.setText(`SCORE: ${score}s`);
 
-        // Défaite lente (la tentation augmente avec le temps)
-        this.increaseTemptation(5); 
-
-        // VICTOIRE !
-        if (timeRemaining <= 0) {
-            this.endGame(true, "T'as tenu 20 secondes, maman est fière !");
+        // 2. Accélération de la Vitesse
+        if (currentZazaSpeed > 1000) {
+            currentZazaSpeed -= ACCEL_RATE;
         }
+
+        // 3. Mise à jour de la fréquence d'apparition
+        const newSpawnDelay = Math.max(500, currentZazaSpeed / 4); 
+        spawnTimer.delay = newSpawnDelay;
     }
     
     spawnZaza() {
         if (!isGameActive) return;
 
-        // Sélection d'un point de départ aléatoire sur le bord de l'écran
         const side = Phaser.Math.Between(0, 3);
         let startX, startY;
 
         switch (side) {
-            case 0: // Haut
-                startX = Phaser.Math.Between(0, GAME_WIDTH);
-                startY = -50;
-                break;
-            case 1: // Bas
-                startX = Phaser.Math.Between(0, GAME_WIDTH);
-                startY = GAME_HEIGHT + 50;
-                break;
-            case 2: // Gauche
-                startX = -50;
-                startY = Phaser.Math.Between(0, GAME_HEIGHT);
-                break;
-            case 3: // Droite
-                startX = GAME_WIDTH + 50;
-                startY = Phaser.Math.Between(0, GAME_HEIGHT);
-                break;
+            case 0: startX = Phaser.Math.Between(0, GAME_WIDTH); startY = -50; break; 
+            case 1: startX = Phaser.Math.Between(0, GAME_WIDTH); startY = GAME_HEIGHT + 50; break; 
+            case 2: startX = -50; startY = Phaser.Math.Between(0, GAME_HEIGHT); break; 
+            case 3: startX = GAME_WIDTH + 50; startY = Phaser.Math.Between(0, GAME_HEIGHT); break; 
         }
         
-        const zaza = this.add.sprite(startX, startY, 'zaza_icon').setScale(0.1).setDepth(3);
+        const zaza = this.physics.add.sprite(startX, startY, 'zaza_icon').setScale(0.3).setDepth(3); 
         zazaGroup.add(zaza);
 
-        // Rendre l'icône cliquable (pour la détruire)
+        zaza.isDamaging = true; 
         zaza.setInteractive({ useHandCursor: true });
-        zaza.on('pointerdown', () => this.destroyZaza(zaza));
+        zaza.on('pointerdown', () => this.destroyZaza(zaza)); 
         
-        // Animation de déplacement vers le centre du joueur
+        // NOUVEAU : La cible du tween utilise les constantes du centre
         this.tweens.add({
             targets: zaza,
-            x: GAME_WIDTH / 2,
-            y: GAME_HEIGHT / 2,
-            duration: Phaser.Math.Between(3000, 5000), // Vitesse aléatoire
+            x: PLAYER_CENTER_X, 
+            y: PLAYER_CENTER_Y, 
+            duration: currentZazaSpeed, 
             ease: 'Linear'
         });
     }
@@ -195,19 +204,33 @@ class GameScene extends Phaser.Scene {
     destroyZaza(zazaIcon) {
         if (!isGameActive) return;
 
-        // 1. Jouer le son de destruction
         this.sound.play('sfx_tap', { volume: 0.8 }); 
 
-        // 2. Détruire l'icône
-        zazaIcon.destroy();
+        // S'assurer qu'elle ne peut plus causer de dégâts
+        zazaIcon.isDamaging = false; 
         
-        // 3. Diminuer la tentation (Récompense)
-        this.increaseTemptation(-15); // Réduire le rouge
+        this.tweens.add({
+            targets: zazaIcon,
+            scale: 0.4,
+            alpha: 0,
+            duration: 100,
+            onComplete: () => zazaIcon.destroy()
+        });
     }
     
-    increaseTemptation(amount) {
-        temptationLevel += amount;
-        temptationLevel = Phaser.Math.Clamp(temptationLevel, 0, MAX_TEMPTATION_LEVEL);
+    handleHit() {
+        if (!isGameActive) return;
+        
+        this.sound.play('sfx_hit', { volume: 0.8 }); 
+        
+        hitsTaken++;
+        hitsText.setText(`TOUCHES: ${hitsTaken} / ${MAX_HITS}`);
+        
+        this.cameras.main.shake(200, 0.01);
+        
+        if (hitsTaken >= MAX_HITS) {
+            this.endGame(false, `La Zaza t'a touché ${MAX_HITS} fois !`);
+        }
     }
 
 
@@ -219,62 +242,48 @@ class GameScene extends Phaser.Scene {
             const currentScene = this; 
             const sceneKey = 'GameScene'; 
 
-            // Arrêter les timers
+            if (score > highScore) {
+                highScore = score;
+            }
+
             if(spawnTimer) spawnTimer.destroy();
             this.time.removeAllEvents(); 
-            
-            // Arrêt de la musique
             if (backgroundMusic && backgroundMusic.isPlaying) {
                 backgroundMusic.stop(); 
             }
             
-            // Nettoyage des sprites
-            zazaGroup.clear(true, true); // Détruire tous les Zaza
+            zazaGroup.clear(true, true); 
 
-            if (player) player.setTint(isVictory ? 0x00FF00 : 0xFF0000); // Couleur de fin
+            if (player) player.setTint(isVictory ? 0x00FF00 : 0xFF0000); 
             
-            // ⬛️ Écran noir de fin de partie
+            // --- Écran de Fin ---
             const blackScreen = this.add.rectangle(0, 0, GAME_WIDTH, GAME_HEIGHT, 0x000000)
-                .setOrigin(0)
-                .setAlpha(0.8) 
-                .setDepth(9); 
-
-
-            // --- 3. Affichage des messages et boutons ---
-            const messageTitle = isVictory ? `VICTOIRE ! 🥳` : 'GAME OVER ! 💀';
+                .setOrigin(0).setAlpha(0.8).setDepth(9); 
+            
+            const messageTitle = isVictory ? `NOUVEAU RECORD ! 🏆` : 'GAME OVER ! 💀';
             const messageColor = isVictory ? '#00FF00' : '#FF0000';
-            const buttonText = isVictory ? 'ENCORE UNE FOIS' : 'RÉESSAYER';
+            const buttonText = 'RÉESSAYER';
 
-            const textStyleBase = { 
-                fontSize: '28px', 
-                fill: '#FFFFFF',
-                align: 'center'
-            };
+            const textStyleBase = { fontSize: '28px', fill: '#FFFFFF', align: 'center' };
 
-            this.add.text(GAME_WIDTH / 2, GAME_HEIGHT / 2 - 120, messageTitle, { 
-                ...textStyleBase,
-                fontSize: isVictory ? '40px' : '48px', 
-                fill: messageColor, 
+            this.add.text(PLAYER_CENTER_X, GAME_HEIGHT / 2 - 120, messageTitle, { 
+                ...textStyleBase, fontSize: isVictory ? '40px' : '48px', fill: messageColor, 
             }).setOrigin(0.5).setDepth(10);
             
-            this.add.text(GAME_WIDTH / 2, GAME_HEIGHT / 2 - 40, reason, { 
-                ...textStyleBase,
-                fontSize: '24px', 
-                fill: isVictory ? '#00AA00' : '#FF8888', 
+            this.add.text(PLAYER_CENTER_X, GAME_HEIGHT / 2 - 40, `Tu as tenu ${score} secondes.`, { 
+                ...textStyleBase, fontSize: '24px', fill: '#FFFFFF', 
+            }).setOrigin(0.5).setDepth(10);
+            
+            this.add.text(PLAYER_CENTER_X, GAME_HEIGHT / 2 + 10, `Meilleur score : ${highScore}s`, { 
+                ...textStyleBase, fontSize: '24px', fill: '#FFD700', 
             }).setOrigin(0.5).setDepth(10);
             
             // Bouton Rejouer
-            const replayButton = this.add.text(GAME_WIDTH / 2, GAME_HEIGHT / 2 + 80, buttonText, { 
-                ...textStyleBase,
-                fontSize: '40px', 
-                fill: '#FFF', 
-                backgroundColor: '#440000',
-                padding: { x: 20, y: 10 },
+            const replayButton = this.add.text(PLAYER_CENTER_X, GAME_HEIGHT / 2 + 80, buttonText, { 
+                ...textStyleBase, fontSize: '40px', fill: '#FFF', backgroundColor: '#440000', padding: { x: 20, y: 10 },
             })
-            .setOrigin(0.5)
-            .setInteractive({ useHandCursor: true }).setDepth(10); 
+            .setOrigin(0.5).setInteractive({ useHandCursor: true }).setDepth(10); 
 
-            // Redémarrage de la scène
             replayButton.on('pointerdown', () => {
                 if (currentScene.scene.isActive(sceneKey)) {
                     currentScene.scene.stop(sceneKey); 
@@ -283,15 +292,12 @@ class GameScene extends Phaser.Scene {
             });
 
             // Bouton Spotify (Conservé)
-            this.add.text(GAME_WIDTH / 2, GAME_HEIGHT / 2 + 160, '🎧 ÉCOUTER LA MUSIQUE DE SHADOW MAS 🎧', { 
-                ...textStyleBase,
-                fontSize: '30px', 
-                fill: '#0F0', 
-                backgroundColor: '#004400',
-                padding: { x: 15, y: 8 },
+            this.add.text(PLAYER_CENTER_X, GAME_HEIGHT / 2 + 160, '🎧 ÉCOUTER LA MUSIQUE DE SHADOW MAS 🎧', { 
+                ...textStyleBase, fontSize: '30px', fill: '#0F0', backgroundColor: '#004400', padding: { x: 15, y: 8 },
             }).setOrigin(0.5).setInteractive({ useHandCursor: true }).setDepth(10)
             .on('pointerdown', () => {
-                window.open(SPOTIFY_LINK, '_blank'); 
+                // Lien de votre single ici (non défini dans ce contexte)
+                window.open('https://open.spotify.com/intl-fr/artist/6gQQrSMHA7SfUEoGSVezPX?si=nyoDsOx5SvuozWH0V4N7Bw', '_blank'); 
             });
         
         } catch (e) {
@@ -311,7 +317,6 @@ const config = {
     physics: {
         default: 'arcade',
         arcade: {
-             // debug: true // Utile pour voir les zones de collision si besoin
         }
     },
     scene: [GameScene], 
