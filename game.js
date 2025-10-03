@@ -34,7 +34,7 @@ let scoreText;
 let highScore = 0;
 let isGameActive = true;
 let cigaretteFlame; 
-let backgroundMusic; // Variable pour la musique de fond
+let backgroundMusic; 
 
 // --- Variables de Décor ---
 let bgLayer; 
@@ -116,7 +116,7 @@ class GameScene extends Phaser.Scene {
         // --- 6. Musique de Fond (BGM) ---
         backgroundMusic = this.sound.add('music', { loop: true, volume: 0.5 }); 
         
-        // Gère le déblocage forcé de l'audio 
+        // Gère le déblocage forcé de l'audio (Crucial pour mobile)
         if (this.sound.locked) {
             this.input.once('pointerdown', () => {
                 this.sound.unlock();
@@ -129,17 +129,51 @@ class GameScene extends Phaser.Scene {
         }
 
 
-        // --- 7. Contrôles ---
+        // --- 7. Contrôles (CORRECTION TACTILE MOBILE) ---
+        
+        // Contrôles Clavier (pour le desktop)
         this.input.keyboard.on('keydown-UP', () => this.changeLane(-1), this); 
         this.input.keyboard.on('keydown-DOWN', () => this.changeLane(1), this); 
+
+        // Contrôles Tactiles (optimisés pour le balayage)
+        let dragStartX = 0;
+        let dragStartY = 0;
+
+        // Événement DÉBUT du contact
         this.input.on('pointerdown', (pointer) => {
-            if (pointer.y < GAME_HEIGHT / 2) {
-                this.changeLane(-1);
-            } else {
-                this.changeLane(1);
+            dragStartX = pointer.x;
+            dragStartY = pointer.y;
+        });
+
+        // Événement FIN du contact (Détection du Swipe ou du Tap par zone)
+        this.input.on('pointerup', (pointer) => {
+            if (!isGameActive) return;
+            
+            const dragThreshold = 50; // Distance minimale pour être considéré comme un balayage
+            const distanceY = pointer.y - dragStartY;
+
+            // VÉRIFICATION DU BALAYAGE VERTICAL (Swipe)
+            if (Math.abs(distanceY) > dragThreshold) {
+                // Balayage vers le haut
+                if (distanceY < 0) { 
+                    this.changeLane(-1);
+                } 
+                // Balayage vers le bas
+                else { 
+                    this.changeLane(1);
+                }
+            }
+            // VÉRIFICATION DU TAP PAR ZONE (Si ce n'est pas un swipe, on utilise la moitié de l'écran)
+            else {
+                const midPointY = GAME_HEIGHT / 2;
+                if (pointer.y < midPointY) {
+                    this.changeLane(-1); // Tap en haut = Monter
+                } else {
+                    this.changeLane(1); // Tap en bas = Descendre
+                }
             }
         }, this);
-    }
+    } // Fin de la fonction create()
 
     update(time, delta) {
         if (!player || !isGameActive) {
@@ -264,9 +298,9 @@ class GameScene extends Phaser.Scene {
             const currentScene = this; 
             const sceneKey = 'GameScene'; 
 
-            // 1. 🛑 ARRÊT DE LA MUSIQUE 🛑
+            // 1. ARRÊT DE LA MUSIQUE
             if (backgroundMusic && backgroundMusic.isPlaying) {
-                backgroundMusic.stop(); // Arrête la lecture de la musique
+                backgroundMusic.stop(); 
             }
             
             // 2. Nettoyage des sprites
