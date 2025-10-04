@@ -1,5 +1,5 @@
 // ====================================================================
-// CONFIGURATION ET VARIABLES GLOBALES : HIGH SCORE SURVIE V8.1 (FINAL)
+// CONFIGURATION ET VARIABLES GLOBALES : HIGH SCORE SURVIE V9.0 (FINAL)
 // ====================================================================
 
 const GAME_WIDTH = 800;
@@ -41,9 +41,12 @@ class GameScene extends Phaser.Scene {
         this.load.image('zaza_icon', 'assets/zaza_icon.png');
         this.load.image('bg_dark', 'assets/bg_dark.png'); 
         
+        // NOUVEAU : Chargement de l'animation de fond (le GIF)
+        this.load.image('bg_anim', 'assets/bg_anim.gif'); 
+        
         // CHARGEMENT AUDIO
         this.load.audio('music', [
-            'assets/ZAZA TUE game.mp3', // <-- NOUVELLE MUSIQUE ICI
+            'assets/ZAZA TUE game.mp3', 
             'assets/ZAZA TUE game.wav'  
         ]); 
         this.load.audio('sfx_tap', 'assets/sfx_tap.mp3');      
@@ -57,8 +60,11 @@ class GameScene extends Phaser.Scene {
         score = 0;
         currentZazaSpeed = 4000;
         
-        // --- 1. Décors ---
-        this.add.rectangle(0, 0, GAME_WIDTH, GAME_HEIGHT, 0x111111).setOrigin(0, 0);
+        // --- 1. Décors (NOUVEAU FOND ANIMÉ) ---
+        // Le sprite est centré pour couvrir toute la scène (800x600)
+        // Ceci affiche l'image bg_anim.gif
+        this.add.sprite(PLAYER_CENTER_X, PLAYER_CENTER_Y, 'bg_anim')
+            .setDepth(0); // Assure qu'il est bien derrière tout (couche la plus basse)
 
         // --- 2. Création du Joueur ---
         player = this.physics.add.sprite(PLAYER_CENTER_X, PLAYER_CENTER_Y, 'player')
@@ -303,7 +309,7 @@ class GameScene extends Phaser.Scene {
                 }
             });
 
-            // Bouton Spotify
+            // Bouton Spotify (lien de l'artiste)
             this.add.text(PLAYER_CENTER_X, GAME_HEIGHT / 2 + 160, '🎧 ÉCOUTER LA MUSIQUE DE SHADOW MAS 🎧', { 
                 ...textStyleBase, fontSize: '30px', fill: '#0F0', backgroundColor: '#004400', padding: { x: 15, y: 8 },
             }).setOrigin(0.5).setInteractive({ useHandCursor: true }).setDepth(10)
