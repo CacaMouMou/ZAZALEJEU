@@ -1,5 +1,5 @@
 // ====================================================================
-// CONFIGURATION ET VARIABLES GLOBALES : HIGH SCORE SURVIE V9.0 (FINAL)
+// CONFIGURATION ET VARIABLES GLOBALES : HIGH SCORE SURVIE V11.0 (IMAGE STATIQUE)
 // ====================================================================
 
 const GAME_WIDTH = 800;
@@ -39,10 +39,9 @@ class GameScene extends Phaser.Scene {
         // CHARGEMENT DES ASSETS
         this.load.image('player', 'assets/player.png'); 
         this.load.image('zaza_icon', 'assets/zaza_icon.png');
-        this.load.image('bg_dark', 'assets/bg_dark.png'); 
         
-        // NOUVEAU : Chargement de l'animation de fond (le GIF)
-        this.load.image('bg_anim', 'assets/bg_anim.gif'); 
+        // NOUVEAU : Chargement de l'image de fond statique
+        this.load.image('bg_static', 'assets/bg_static.png'); 
         
         // CHARGEMENT AUDIO
         this.load.audio('music', [
@@ -54,17 +53,17 @@ class GameScene extends Phaser.Scene {
     }
 
     create() {
+        // Règle la couleur de fond par défaut
         this.cameras.main.setBackgroundColor('#222222'); 
         isGameActive = true;
         hitsTaken = 0;
         score = 0;
         currentZazaSpeed = 4000;
         
-        // --- 1. Décors (NOUVEAU FOND ANIMÉ) ---
-        // Le sprite est centré pour couvrir toute la scène (800x600)
-        // Ceci affiche l'image bg_anim.gif
-        this.add.sprite(PLAYER_CENTER_X, PLAYER_CENTER_Y, 'bg_anim')
-            .setDepth(0); // Assure qu'il est bien derrière tout (couche la plus basse)
+        // --- 1. Décors (Affichage de l'image de fond) ---
+        // L'image est centrée sur l'écran
+        this.add.sprite(PLAYER_CENTER_X, PLAYER_CENTER_Y, 'bg_static')
+             .setDepth(0); // Couche la plus basse pour être en arrière-plan
 
         // --- 2. Création du Joueur ---
         player = this.physics.add.sprite(PLAYER_CENTER_X, PLAYER_CENTER_Y, 'player')
@@ -108,6 +107,7 @@ class GameScene extends Phaser.Scene {
         // --- 6. Musique de Fond (BGM) ---
         backgroundMusic = this.sound.add('music', { loop: true, volume: 0.5 }); 
         
+        // IMPORTANT : La musique doit être jouée après une interaction utilisateur
         if (this.sound.locked) {
             this.input.once('pointerdown', () => {
                 this.sound.unlock();
@@ -275,8 +275,9 @@ class GameScene extends Phaser.Scene {
             if (player) player.setTint(0xFF0000); // Devient Rouge à la défaite
             
             // --- Écran de Fin ---
+            // Le rectangle devient opaque pour couvrir l'écran
             const blackScreen = this.add.rectangle(0, 0, GAME_WIDTH, GAME_HEIGHT, 0x000000)
-                .setOrigin(0).setAlpha(0.8).setDepth(9); 
+                .setOrigin(0).setAlpha(1.0).setDepth(9); 
             
             const messageTitle = 'GAME OVER ! 💀';
             const messageColor = '#FF0000';

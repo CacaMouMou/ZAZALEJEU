@@ -1,14 +1,44 @@
 <!DOCTYPE html>
-<html>
+<html lang="fr">
 <head>
-    <meta charset="utf-8">
-    <title>Shadow Mas - Zaza Mode</title>
+    <meta charset="UTF-8">
+    <title>Shadow Mas : Zaza Mode</title>
     <style>
-        /* On retire la marge pour que le jeu prenne toute la page */
-        body { margin: 0; }
+        body { margin: 0; padding: 0; overflow: hidden; } /* Enlève les marges */
+        /* CSS NÉCESSAIRE POUR POSIONNER LA VIDÉO EN ARRIÈRE-PLAN */
+        #video-background {
+            position: fixed; 
+            right: 0;
+            bottom: 0;
+            min-width: 100%;
+            min-height: 100%;
+            width: auto;
+            height: auto;
+            z-index: -100; /* Place la vidéo derrière tout */
+            background-size: cover;
+        }
+        /* PHASER DOIT ÊTRE LANCÉ DANS UN DIV POUR LE CENTRAGE */
+        #game-container {
+            width: 800px; /* Largeur de votre jeu */
+            height: 600px; /* Hauteur de votre jeu */
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            z-index: 10;
+        }
     </style>
 </head>
 <body>
+    
+    <video autoplay muted loop id="video-background">
+        <source src="assets/bg_video.mp4" type="video/mp4">
+        <source src="assets/bg_video.webm" type="video/webm">
+    </video>
+
+    <div id="game-container">
+        </div>
+    
     <script src="phaser.min.js"></script>
     <script src="game.js"></script>
 </body>
